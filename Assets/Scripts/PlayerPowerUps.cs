@@ -1,6 +1,7 @@
 using UnityEngine;
 
 // Gives the player a speed boost for a limited time.
+[RequireComponent(typeof(PlayerMovement))]
 public class PlayerPowerUps : MonoBehaviour
 {
     [SerializeField] private float boostMultiplier = 1.5f;
@@ -11,7 +12,7 @@ public class PlayerPowerUps : MonoBehaviour
 
     private PlayerMovement movement;
 
-    private void Start()
+    private void Awake()
     {
         movement = GetComponent<PlayerMovement>();
     }
@@ -19,9 +20,9 @@ public class PlayerPowerUps : MonoBehaviour
     // Called when the player collects a speed boost.
     public void ActivateSpeedBoost(float duration)
     {
-        SpeedTimeLeft = duration;
+        SpeedTimeLeft = Mathf.Max(0f, duration);
 
-        movement.SpeedMultiplier = boostMultiplier;
+        movement.SpeedMultiplier = SpeedTimeLeft > 0f ? boostMultiplier : 1f;
     }
 
     private void Update()
@@ -41,5 +42,11 @@ public class PlayerPowerUps : MonoBehaviour
             SpeedTimeLeft = 0f;
             movement.SpeedMultiplier = 1f;
         }
+    }
+
+    private void OnDisable()
+    {
+        SpeedTimeLeft = 0f;
+        if (movement != null) movement.SpeedMultiplier = 1f;
     }
 }
