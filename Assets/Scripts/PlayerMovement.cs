@@ -1,72 +1,116 @@
 using UnityEngine;
 
-// Moves the player with a Rigidbody: 
-// A/D or Left/Right arrows to ROTATE, W/S or Up/Down to move Forward/Backward, Space to jump.
+// Moves the player with a Rigidbody:
+// A/D or Left/Right to move sideways,
+// W/S or Up/Down to move forward/backward,
+// Space to jump.
 [RequireComponent(typeof(Rigidbody))]
 public class PlayerMovement : MonoBehaviour
 {
     [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 7f;      // units per second
-    [SerializeField] private float turnSpeed = 150f;    // degrees per second
-    [SerializeField] private float jumpForce = 5f;      // strength of the jump
-   [SerializeField] private float doubleJumpForce = 4f;
+    [SerializeField] private float moveSpeed = 7f;
+    [SerializeField] private float turnSpeed = 150f;
+    [SerializeField] private float jumpForce = 5f;
+    [SerializeField] private float doubleJumpForce = 4f;
+
     [Header("Ground Check Settings")]
-    [SerializeField] private float groundDistance = 0.5f; // ray length
-    [SerializeField] private LayerMask groundMask;        // ground layers
+    [SerializeField] private float groundDistance = 0.5f;
+    [SerializeField] private LayerMask groundMask;
 
-    private Rigidbody rb;               // the physics body we move
-    private Vector3 moveDirection;      // worked out from input in Update()
-    private float turnInput;            // horizontal input for rotation
-    private bool isGrounded;            // true when standing on the ground
-    private bool jumpRequested = false; // set in Update(), used later
-    private bool doubleJumpRequested = false; // set in TryDoubleJump()
-    private bool hasDoubleJumped = false;     // one per jump
+    private Rigidbody rb;
+    private Vector3 moveDirection;
 
+    private bool isGrounded;
+    private bool jumpRequested = false;
+    private bool doubleJumpRequested = false;
+    private bool hasDoubleJumped = false;
+
+    // Other scripts can check if the player is grounded,
+    // but they cannot change this value.
     public bool IsGrounded => isGrounded;
+
+    // LAB 7:
+    // Multiplies the normal speed.
+    // 1 = normal speed
+    // 1.5 = 50% faster
+    // Other scripts such as PlayerPowerUps can change this.
+    public float SpeedMultiplier { get; set; } = 1f;
 
     private void Start()
     {
         rb = GetComponent<Rigidbody>();
+
+        // Prevent the Rigidbody from tipping over.
         rb.constraints = RigidbodyConstraints.FreezeRotation;
     }
 
     private void Update()
     {
-        // 1. Ground Check
-        isGrounded = Physics.Raycast(transform.position + transform.up*groundDistance/2, -transform.up, groundDistance, groundMask);
+        // -------------------------
+        // 1. GROUND CHECK
+        // -------------------------
 
-        // Back on the ground: the double jump is available again
+        isGrounded = Physics.Raycast(
+            transform.position + transform.up * groundDistance / 2f,
+            -transform.up,
+            groundDistance,
+            groundMask
+        );
+
+        // Once the player lands, allow another double jump.
         if (isGrounded)
         {
             hasDoubleJumped = false;
         }
 
+        // -------------------------
+        // 2. MOVEMENT INPUT
+        // -------------------------
 
-        // 2. Read Inputs
-        float moveX = Input.GetAxisRaw("Horizontal"); // A/D or Left/Right turn input
-        float moveZ = Input.GetAxisRaw("Vertical");  // W/S or Up/Down forward/backward
+        float moveX = Input.GetAxisRaw("Horizontal");
+        float moveZ = Input.GetAxisRaw("Vertical");
 
-
+        // Get the camera directions.
         Vector3 cameraForward = Camera.main.transform.forward;
-        Vector3 cameraRight = Camera.main.transform.forward;
+        Vector3 cameraRight = Camera.main.transform.right;
 
-        cameraForward.y = 0.0f;
-        cameraRight.y = 0.0f;
+        // We only want movement along the ground.
+        cameraForward.y = 0f;
+        cameraRight.y = 0f;
 
-        // Rotate the player transform in Update for responsive turning visuals
-        // Calculate forward movement relative to current facing direction
-        moveDirection = cameraForward * moveZ + cameraRight * moveX;
+        cameraForward.Normalize();
+        cameraRight.Normalize();
 
-        if (moveDirection.magnitude > 0.0f)
+        // Move relative to the camera.
+        moveDirection =
+            cameraForward * moveZ +
+            cameraRight * moveX;
+
+        // Prevent diagonal movement from being faster.
+        if (moveDirection.magnitude > 1f)
         {
-            Quaternion targetRotation = Quaternion.LookRotation(moveDirection.normalized);
-            transform.rotation = Quaternion.RotateTowards(
-                transform.rotation, 
-                targetRotation, 
-                turnSpeed * Time.deltaTime);
+            moveDirection.Normalize();
         }
 
-        // 3. Handle Jump Input
+        // Rotate the character toward the direction
+        // that they are moving.
+        if (moveDirection.magnitude > 0f)
+        {
+            Quaternion targetRotation =
+                Quaternion.LookRotation(moveDirection);
+
+            transform.rotation =
+                Quaternion.RotateTowards(
+                    transform.rotation,
+                    targetRotation,
+                    turnSpeed * Time.deltaTime
+                );
+        }
+
+        // -------------------------
+        // 3. JUMP INPUT
+        // -------------------------
+
         if (Input.GetButtonDown("Jump") && isGrounded)
         {
             jumpRequested = true;
@@ -75,49 +119,69 @@ public class PlayerMovement : MonoBehaviour
 
     private void FixedUpdate()
     {
+        // Physics movement should happen in FixedUpdate.
         MovePlayer();
- 
+
+        // First jump.
         if (jumpRequested)
         {
             Jump(jumpForce);
             jumpRequested = false;
         }
- 
-        // NEW: the second jump, in mid-air
+
+        // Double jump.
         if (doubleJumpRequested)
         {
             Jump(doubleJumpForce);
             doubleJumpRequested = false;
         }
     }
- 
-    private void Jump(float force)
-    {
-        rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f,
-                                        rb.linearVelocity.z);
-        rb.AddForce(Vector3.up * force, ForceMode.VelocityChange);
-    }
-
 
     private void MovePlayer()
     {
-        // Calculate velocity based on current forward vector
-        Vector3 targetVelocity = moveDirection * moveSpeed;
+        // LAB 7:
+        // SpeedMultiplier is normally 1.
+        // During a speed boost it will become 1.5.
+        Vector3 targetVelocity =
+            moveDirection * moveSpeed * SpeedMultiplier;
 
-        // Apply movement while preserving vertical velocity (gravity/jumping)
-        rb.linearVelocity = new Vector3(targetVelocity.x, rb.linearVelocity.y, targetVelocity.z);
+        // Keep the Y velocity so gravity and jumping still work.
+        rb.linearVelocity = new Vector3(
+            targetVelocity.x,
+            rb.linearVelocity.y,
+            targetVelocity.z
+        );
     }
 
-     // Tries to jump a second time in mid-air.
-    // Returns true if the double jump really happened.
+    private void Jump(float force)
+    {
+        // Reset vertical speed before jumping.
+        rb.linearVelocity = new Vector3(
+            rb.linearVelocity.x,
+            0f,
+            rb.linearVelocity.z
+        );
+
+        rb.AddForce(
+            Vector3.up * force,
+            ForceMode.VelocityChange
+        );
+    }
+
+    // Tries to perform the second jump while in the air.
+    // Returns true if the double jump was successfully requested.
     public bool TryDoubleJump()
     {
-        // Not allowed on the ground, or if it was already used
-        if (isGrounded || hasDoubleJumped) return false;
- 
+        // Cannot double jump while grounded.
+        // Cannot double jump more than once.
+        if (isGrounded || hasDoubleJumped)
+        {
+            return false;
+        }
+
         doubleJumpRequested = true;
         hasDoubleJumped = true;
+
         return true;
     }
-
 }
